@@ -21,6 +21,9 @@ extern sdmmc_card_t *card_host;  // Extern declaration from sdcard_bsp.c
 
 lv_ui user_ui;
 
+// SD card image file path constant
+#define SDCARD_IMAGE_PATH "S:/sdcard/1.jpg"
+
 // Function to load and display image from SD card
 void load_and_display_sdcard_image(lv_ui *ui);
 
@@ -104,13 +107,13 @@ void load_and_display_sdcard_image(lv_ui *ui)
   
   // Try to load the image from SD card
   // LVGL uses filesystem with letter prefix, 'S' = 83 for STDIO
-  lv_img_set_src(ui->screen_img_sdcard, "S:/sdcard/1.jpg");
+  lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
   
   // Show the image and hide carousel
   lv_obj_clear_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
   
-  ESP_LOGI(TAG, "Attempting to display image from SD card: /sdcard/1.jpg");
+  ESP_LOGI(TAG, "Attempting to display image from SD card: %s", SDCARD_IMAGE_PATH);
 }
 
 void example_button_task(void *arg)
@@ -131,25 +134,27 @@ void example_button_task(void *arg)
     EventBits_t even = xEventGroupWaitBits(key_groups,even_set_bit,pdTRUE,pdFALSE,pdMS_TO_TICKS(2500));
     if(READ_BIT(even,0))    //单击
     {
-      // If we're in the main interface (page 2) and image not displayed, load image
-      if(ui_over == 2 && !image_displayed)
+      // If image is currently displayed, hide it and return to carousel
+      if(image_displayed)
       {
-        load_and_display_sdcard_image(ui);
-        image_displayed = 1;
-      }
-      else if(image_displayed)
-      {
-        // If image is displayed, hide it and show carousel again
+        // Hide image and show carousel again
         if(ui->screen_img_sdcard != NULL)
         {
           lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
         }
         lv_obj_clear_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
         image_displayed = 0;
+        // Note: ui_over remains at its last position (typically 2)
+      }
+      // If we're in the main interface (page 2) and image not displayed, load image
+      else if(ui_over == 2 && !image_displayed)
+      {
+        load_and_display_sdcard_image(ui);
+        image_displayed = 1;
       }
       else
       {
-        // Normal carousel navigation
+        // Normal carousel navigation when not displaying image
         switch (ui_over)
         {
           case 2:
