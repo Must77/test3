@@ -121,21 +121,19 @@ void load_and_display_sdcard_image(lv_ui *ui)
   
   // Try to load the image from SD card
   // LVGL uses filesystem with letter prefix, 'S' = 83 for STDIO
+  // Note: In LVGL 8.x, lv_img_set_src returns void, so we can't check return value
+  // The image will show error symbol if file doesn't exist or is invalid
   ESP_LOGI(TAG, "Attempting to load image from SD card: %s", SDCARD_IMAGE_PATH);
-  lv_res_t res = lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
-  
-  if(res != LV_RES_OK)
-  {
-    ESP_LOGE(TAG, "Failed to load image from %s (file not found or invalid format)", SDCARD_IMAGE_PATH);
-    ESP_LOGE(TAG, "Please ensure 1.jpg exists in /sdcard/ directory");
-    return;
-  }
+  lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
   
   // Show the image and hide carousel
   lv_obj_clear_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
   
-  ESP_LOGI(TAG, "Image loaded and displayed successfully");
+  ESP_LOGI(TAG, "Image display command sent. If image doesn't show, check:");
+  ESP_LOGI(TAG, "  1. SD card is properly inserted and formatted");
+  ESP_LOGI(TAG, "  2. File /sdcard/1.jpg exists");
+  ESP_LOGI(TAG, "  3. Image format is valid JPEG");
 }
 
 void example_button_task(void *arg)
@@ -166,7 +164,8 @@ void example_button_task(void *arg)
         }
         lv_obj_clear_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
         image_displayed = 0;
-        // Note: ui_over remains at its last position (typically 2)
+        // Reset to main interface page when returning from image
+        ui_over = 2;
       }
       // If we're in the main interface (page 2) and image not displayed, load image
       else if(ui_over == 2 && !image_displayed)
