@@ -15,6 +15,9 @@
 #include "i2c_equipment.h"
 #include "ble_scan_bsp.h"
 #include "esp_wifi_bsp.h"
+#include "user_config.h"
+#include <sys/stat.h>
+#include <vector>
 lv_ui user_ui;
 
 void user_color_task(void *arg);
@@ -22,6 +25,15 @@ void example_user_task(void *arg);
 void example_sdcard_task(void *arg);
 void example_button_task(void *arg);
 void example_scan_wifi_ble_task(void *arg);
+static void show_rgb_sequence(lv_ui *ui);
+static void log_sd_test_file(void);
+static void load_and_display_jpg(lv_ui *ui);
+static const char *TAG_BTN = "boot_key";
+static const char *TAG_SDCARD_LOG = "sdcard_meta";
+static const char *TAG_JPG = "jpg_loader";
+static const char *SD_ROOT_PATH = "/sdcard/";
+static const char *TEST_FILE_NAME = "TEST.TXT";
+static const char *JPG_FILE_NAME = "1.jpg";
 void User_LCD_Before_Init(void)
 {
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
@@ -75,7 +87,6 @@ void example_scan_wifi_ble_task(void *arg)
 void example_button_task(void *arg)
 {
   lv_ui *ui = (lv_ui *)arg;
-  uint8_t ui_over = 2;
   uint8_t bl_test = 255;
   uint32_t sdcard_test = 0;
   char sdcard_send_buf[50] = {""};
@@ -89,27 +100,9 @@ void example_button_task(void *arg)
     EventBits_t even = xEventGroupWaitBits(key_groups,even_set_bit,pdTRUE,pdFALSE,pdMS_TO_TICKS(2500));
     if(READ_BIT(even,0))    //单击
     {
-      switch (ui_over)
-      {
-        case 2:
-          ui_over = 3;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 3:
-          ui_over = 4;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 4:
-          ui_over = 5;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        case 5:
-          ui_over = 2;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        default:
-          break;
-      }
+      ESP_LOGI(TAG_BTN, "BOOT single click detected");
+      show_rgb_sequence(ui);
+      load_and_display_jpg(ui);
     }
     else if(READ_BIT(even,1))  //双击
     {
@@ -158,6 +151,7 @@ void example_sdcard_task(void *arg)
   {
     snprintf(send_lvgl,45,"sdcard : %.2fG",user_sdcard_bsp.sdcard_size);
     lv_label_set_text(Send_ui->screen_label_3,send_lvgl);
+    log_sd_test_file();
   }
   else
   {
@@ -169,22 +163,36 @@ void example_sdcard_task(void *arg)
 void user_color_task(void *arg)
 {
   lv_ui *ui = (lv_ui *)arg;
+  show_rgb_sequence(ui);
+  lv_obj_add_flag(ui->screen_carousel_1,LV_OBJ_FLAG_SCROLLABLE); //可移动
+  lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);//向左滑动320
+  vTaskDelete(NULL); //删除任务
+}
+
+static void show_rgb_sequence(lv_ui *ui)
+{
+  if(ui == NULL)
+  {
+    return;
+  }
+  ESP_LOGI(TAG_BTN, "Start RGB sequence on screen");
   lv_obj_clear_flag(ui->screen_carousel_1,LV_OBJ_FLAG_SCROLLABLE); //不可移动
   lv_obj_clear_flag(ui->screen_img_1,LV_OBJ_FLAG_HIDDEN);  //显示
   lv_obj_add_flag(ui->screen_img_2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_img_3, LV_OBJ_FLAG_HIDDEN);
+  ESP_LOGI(TAG_BTN, "Showing RED frame");
   vTaskDelay(pdMS_TO_TICKS(1500));
   lv_obj_clear_flag(ui->screen_img_2,LV_OBJ_FLAG_HIDDEN); //显示
   lv_obj_add_flag(ui->screen_img_1, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_img_3, LV_OBJ_FLAG_HIDDEN);
+  ESP_LOGI(TAG_BTN, "Showing GREEN frame");
   vTaskDelay(pdMS_TO_TICKS(1500));
   lv_obj_clear_flag(ui->screen_img_3,LV_OBJ_FLAG_HIDDEN); //显示
   lv_obj_add_flag(ui->screen_img_2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_img_1, LV_OBJ_FLAG_HIDDEN);
+  ESP_LOGI(TAG_BTN, "Showing BLUE frame");
   vTaskDelay(pdMS_TO_TICKS(1500));
   lv_obj_add_flag(ui->screen_carousel_1,LV_OBJ_FLAG_SCROLLABLE); //可移动
-  lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);//向左滑动320
-  vTaskDelete(NULL); //删除任务
 }
 
 
@@ -232,4 +240,69 @@ void example_user_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(200));
     stimes++;
   }
+}
+
+static void log_sd_test_file(void)
+{
+  char test_path[64] = {0};
+  snprintf(test_path, sizeof(test_path), "%s%s", SD_ROOT_PATH, TEST_FILE_NAME);
+  struct stat test_stat = {};
+  if(stat(test_path, &test_stat) != 0)
+  {
+    ESP_LOGE(TAG_SDCARD_LOG, "STAT fail for %s", test_path);
+    return;
+  }
+  ESP_LOGI(TAG_SDCARD_LOG, "File:%s size:%ld bytes mode:0%o", test_path, (long)test_stat.st_size, test_stat.st_mode);
+  size_t alloc_len = test_stat.st_size + 1;
+  std::vector<char> file_buf(alloc_len, 0);
+  size_t read_len = 0;
+  if(sdcard_file_read(test_path, file_buf.data(), &read_len) == ESP_OK)
+  {
+    if(read_len >= file_buf.size())
+    {
+      read_len = file_buf.size() - 1;
+    }
+    file_buf[read_len] = '\0';
+    ESP_LOGI(TAG_SDCARD_LOG, "Content(%d bytes): %s", (int)read_len, file_buf.data());
+  }
+  else
+  {
+    ESP_LOGE(TAG_SDCARD_LOG, "Read fail for %s", test_path);
+  }
+}
+
+static void load_and_display_jpg(lv_ui *ui)
+{
+  if(ui == NULL)
+  {
+    return;
+  }
+  char fs_path[64] = {0};
+  char lv_path[64] = {0};
+  snprintf(fs_path, sizeof(fs_path), "%s%s", SD_ROOT_PATH, JPG_FILE_NAME);
+  snprintf(lv_path, sizeof(lv_path), "S:%s", JPG_FILE_NAME);
+  struct stat jpg_stat = {};
+  if(stat(fs_path, &jpg_stat) != 0)
+  {
+    ESP_LOGE(TAG_JPG, "STAT fail for %s", fs_path);
+    return;
+  }
+  ESP_LOGI(TAG_JPG, "JPEG %s size:%ld bytes mode:0%o", fs_path, (long)jpg_stat.st_size, jpg_stat.st_mode);
+  lv_img_header_t header;
+  lv_res_t res = lv_img_decoder_get_info(lv_path, &header);
+  if(res == LV_RES_OK)
+  {
+    ESP_LOGI(TAG_JPG, "LVGL decoded %s -> w:%d h:%d cf:%d", lv_path, header.w, header.h, header.cf);
+  }
+  else
+  {
+    ESP_LOGE(TAG_JPG, "LVGL decoder failed for %s", lv_path);
+    return;
+  }
+  lv_obj_clear_flag(ui->screen_img_4, LV_OBJ_FLAG_HIDDEN);
+  lv_img_set_src(ui->screen_img_4, lv_path);
+  lv_obj_set_pos(ui->screen_img_4, 0, 0);
+  lv_obj_set_size(ui->screen_img_4, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+  lv_obj_scroll_to_view(ui->screen_carousel_1_element_3, LV_ANIM_ON);
+  ESP_LOGI(TAG_JPG, "JPEG shown on carousel element 3 using %s", lv_path);
 }
