@@ -168,7 +168,7 @@ void example_button_task(void *arg)
         ui_over = 2;
       }
       // If we're in the main interface (page 2) and image not displayed, load image
-      else if(ui_over == 2 && !image_displayed)
+      else if(ui_over == 2)
       {
         load_and_display_sdcard_image(ui);
         image_displayed = 1;
@@ -180,19 +180,19 @@ void example_button_task(void *arg)
         {
           case 2:
             ui_over = 3;
-            lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
+            lv_obj_scroll_by(ui->screen_carousel_1, -SCREEN_WIDTH, 0, LV_ANIM_ON);
             break;
           case 3:
             ui_over = 4;
-            lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
+            lv_obj_scroll_by(ui->screen_carousel_1, -SCREEN_WIDTH, 0, LV_ANIM_ON);
             break;
           case 4:
             ui_over = 5;
-            lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
+            lv_obj_scroll_by(ui->screen_carousel_1, SCREEN_WIDTH, 0, LV_ANIM_ON);
             break;
           case 5:
             ui_over = 2;
-            lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
+            lv_obj_scroll_by(ui->screen_carousel_1, SCREEN_WIDTH, 0, LV_ANIM_ON);
             break;
           default:
             break;
