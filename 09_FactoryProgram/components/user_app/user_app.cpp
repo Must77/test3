@@ -18,6 +18,7 @@
 #include "user_config.h"
 #include <sys/stat.h>
 #include <vector>
+#include "freertos/semphr.h"
 lv_ui user_ui;
 
 void user_color_task(void *arg);
@@ -33,7 +34,9 @@ static const char *TAG_SDCARD_LOG = "sdcard_meta";
 static const char *TAG_JPG = "jpg_loader";
 static const char *SD_ROOT_PATH = "/sdcard/";
 static const char *TEST_FILE_NAME = "TEST.TXT";
-static const char *JPG_FILE_NAME = "1.jpg";
+static const char *DEFAULT_JPG_FILE_NAME = "1.jpg";
+static constexpr size_t SD_PATH_BUF_LEN = 256;
+static SemaphoreHandle_t rgb_mutex = NULL;
 void User_LCD_Before_Init(void)
 {
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
@@ -91,6 +94,8 @@ void example_button_task(void *arg)
   uint32_t sdcard_test = 0;
   char sdcard_send_buf[50] = {""};
   char sdcard_read_buf[50] = {""};
+  char test_path[SD_PATH_BUF_LEN] = {0};
+  snprintf(test_path, sizeof(test_path), "%s%s", SD_ROOT_PATH, TEST_FILE_NAME);
   uint8_t even_set_bit = 0;
   SET_BIT(even_set_bit,0);
   SET_BIT(even_set_bit,1);
@@ -124,8 +129,8 @@ void example_button_task(void *arg)
     {
       sdcard_test++;
       snprintf(sdcard_send_buf,50,"China is the greatest country : %ld",sdcard_test);
-      sdcard_file_write("/sdcard/Test.txt",sdcard_send_buf);
-      sdcard_file_read("/sdcard/Test.txt",sdcard_read_buf,NULL);
+      sdcard_file_write(test_path,sdcard_send_buf);
+      sdcard_file_read(test_path,sdcard_read_buf,NULL);
       if(!strcmp(sdcard_send_buf,sdcard_read_buf))
       {
         ESP_LOGI("sdcardTest", "sd card Test pass");
@@ -175,6 +180,20 @@ static void show_rgb_sequence(lv_ui *ui)
   {
     return;
   }
+  if(rgb_mutex == NULL)
+  {
+    rgb_mutex = xSemaphoreCreateMutex();
+    if(rgb_mutex == NULL)
+    {
+      ESP_LOGE(TAG_BTN, "RGB mutex init failed");
+      return;
+    }
+  }
+  if(xSemaphoreTake(rgb_mutex, 0) != pdTRUE)
+  {
+    ESP_LOGW(TAG_BTN, "RGB sequence already running, skip new request");
+    return;
+  }
   ESP_LOGI(TAG_BTN, "Start RGB sequence on screen");
   lv_obj_clear_flag(ui->screen_carousel_1,LV_OBJ_FLAG_SCROLLABLE); //不可移动
   lv_obj_clear_flag(ui->screen_img_1,LV_OBJ_FLAG_HIDDEN);  //显示
@@ -193,6 +212,7 @@ static void show_rgb_sequence(lv_ui *ui)
   ESP_LOGI(TAG_BTN, "Showing BLUE frame");
   vTaskDelay(pdMS_TO_TICKS(1500));
   lv_obj_add_flag(ui->screen_carousel_1,LV_OBJ_FLAG_SCROLLABLE); //可移动
+  xSemaphoreGive(rgb_mutex);
 }
 
 
@@ -244,7 +264,7 @@ void example_user_task(void *arg)
 
 static void log_sd_test_file(void)
 {
-  char test_path[64] = {0};
+  char test_path[SD_PATH_BUF_LEN] = {0};
   snprintf(test_path, sizeof(test_path), "%s%s", SD_ROOT_PATH, TEST_FILE_NAME);
   struct stat test_stat = {};
   if(stat(test_path, &test_stat) != 0)
@@ -258,12 +278,15 @@ static void log_sd_test_file(void)
   size_t read_len = 0;
   if(sdcard_file_read(test_path, file_buf.data(), &read_len) == ESP_OK)
   {
-    if(read_len >= file_buf.size())
+    size_t max_len = (file_buf.size() > 0) ? (file_buf.size() - 1) : 0;
+    bool truncated = read_len > max_len;
+    size_t capped_len = truncated ? max_len : read_len;
+    file_buf[capped_len] = '\0';
+    if(truncated)
     {
-      read_len = file_buf.size() - 1;
+      ESP_LOGW(TAG_SDCARD_LOG, "Content truncated to %d bytes (raw len %d)", (int)capped_len, (int)read_len);
     }
-    file_buf[read_len] = '\0';
-    ESP_LOGI(TAG_SDCARD_LOG, "Content(%d bytes): %s", (int)read_len, file_buf.data());
+    ESP_LOGI(TAG_SDCARD_LOG, "Content(%d bytes): %s", (int)capped_len, file_buf.data());
   }
   else
   {
@@ -277,10 +300,15 @@ static void load_and_display_jpg(lv_ui *ui)
   {
     return;
   }
-  char fs_path[64] = {0};
-  char lv_path[64] = {0};
-  snprintf(fs_path, sizeof(fs_path), "%s%s", SD_ROOT_PATH, JPG_FILE_NAME);
-  snprintf(lv_path, sizeof(lv_path), "S:%s", JPG_FILE_NAME);
+  char fs_path[SD_PATH_BUF_LEN] = {0};
+  char lv_path[SD_PATH_BUF_LEN] = {0};
+  if(ui->screen_img_4 == NULL || ui->screen_carousel_1_element_3 == NULL)
+  {
+    ESP_LOGE(TAG_JPG, "Target image widgets not ready");
+    return;
+  }
+  snprintf(fs_path, sizeof(fs_path), "%s%s", SD_ROOT_PATH, DEFAULT_JPG_FILE_NAME);
+  snprintf(lv_path, sizeof(lv_path), "S:%s", DEFAULT_JPG_FILE_NAME);
   struct stat jpg_stat = {};
   if(stat(fs_path, &jpg_stat) != 0)
   {
