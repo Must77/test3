@@ -16,6 +16,7 @@
 #include "ble_scan_bsp.h"
 #include "esp_wifi_bsp.h"
 #include "sdmmc_cmd.h"
+#include "user_config.h"
 
 extern sdmmc_card_t *card_host;  // Extern declaration from sdcard_bsp.c
 
@@ -23,6 +24,14 @@ lv_ui user_ui;
 
 // SD card image file path constant
 #define SDCARD_IMAGE_PATH "S:/sdcard/1.jpg"
+
+// Screen dimensions (from user_config.h)
+#ifndef SCREEN_WIDTH
+#define SCREEN_WIDTH EXAMPLE_LCD_H_RES
+#endif
+#ifndef SCREEN_HEIGHT
+#define SCREEN_HEIGHT EXAMPLE_LCD_V_RES
+#endif
 
 // Function to load and display image from SD card
 void load_and_display_sdcard_image(lv_ui *ui);
@@ -99,21 +108,34 @@ void load_and_display_sdcard_image(lv_ui *ui)
   if(ui->screen_img_sdcard == NULL)
   {
     ui->screen_img_sdcard = lv_img_create(ui->screen);
+    if(ui->screen_img_sdcard == NULL)
+    {
+      ESP_LOGE(TAG, "Failed to create image object (out of memory)");
+      return;
+    }
     lv_obj_set_pos(ui->screen_img_sdcard, 0, 0);
-    lv_obj_set_size(ui->screen_img_sdcard, 320, 820);
+    lv_obj_set_size(ui->screen_img_sdcard, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_img_opa(ui->screen_img_sdcard, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
   }
   
   // Try to load the image from SD card
   // LVGL uses filesystem with letter prefix, 'S' = 83 for STDIO
-  lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
+  ESP_LOGI(TAG, "Attempting to load image from SD card: %s", SDCARD_IMAGE_PATH);
+  lv_res_t res = lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
+  
+  if(res != LV_RES_OK)
+  {
+    ESP_LOGE(TAG, "Failed to load image from %s (file not found or invalid format)", SDCARD_IMAGE_PATH);
+    ESP_LOGE(TAG, "Please ensure 1.jpg exists in /sdcard/ directory");
+    return;
+  }
   
   // Show the image and hide carousel
   lv_obj_clear_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
   
-  ESP_LOGI(TAG, "Attempting to display image from SD card: %s", SDCARD_IMAGE_PATH);
+  ESP_LOGI(TAG, "Image loaded and displayed successfully");
 }
 
 void example_button_task(void *arg)
