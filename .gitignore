@@ -53,3 +53,37 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# ESP-IDF Specific
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults.lock
+dependencies.lock
+managed_components/
+.devcontainer/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+install_manifest.txt
+
+# VSCode
+.vscode/
+*.code-workspace
+.history/
+
+# Ubuntu/Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+.DS_Store
