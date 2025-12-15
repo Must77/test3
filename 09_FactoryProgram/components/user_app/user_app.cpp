@@ -15,7 +15,14 @@
 #include "i2c_equipment.h"
 #include "ble_scan_bsp.h"
 #include "esp_wifi_bsp.h"
+#include "sdmmc_cmd.h"
+
+extern sdmmc_card_t *card_host;  // Extern declaration from sdcard_bsp.c
+
 lv_ui user_ui;
+
+// Function to load and display image from SD card
+void load_and_display_sdcard_image(lv_ui *ui);
 
 void user_color_task(void *arg);
 void example_user_task(void *arg);
@@ -72,6 +79,40 @@ void example_scan_wifi_ble_task(void *arg)
   ble_stack_deinit();//释放BLE
   vTaskDelete(NULL);
 }
+
+// Function to load and display image from SD card
+void load_and_display_sdcard_image(lv_ui *ui)
+{
+  static const char *TAG = "ImageLoader";
+  
+  // Check if SD card is available
+  if(card_host == NULL)
+  {
+    ESP_LOGE(TAG, "SD card not initialized");
+    return;
+  }
+  
+  // Check if image object already exists, if not create it
+  if(ui->screen_img_sdcard == NULL)
+  {
+    ui->screen_img_sdcard = lv_img_create(ui->screen);
+    lv_obj_set_pos(ui->screen_img_sdcard, 0, 0);
+    lv_obj_set_size(ui->screen_img_sdcard, 320, 820);
+    lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_img_opa(ui->screen_img_sdcard, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+  }
+  
+  // Try to load the image from SD card
+  // LVGL uses filesystem with letter prefix, 'S' = 83 for STDIO
+  lv_img_set_src(ui->screen_img_sdcard, "S:/sdcard/1.jpg");
+  
+  // Show the image and hide carousel
+  lv_obj_clear_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
+  
+  ESP_LOGI(TAG, "Attempting to display image from SD card: /sdcard/1.jpg");
+}
+
 void example_button_task(void *arg)
 {
   lv_ui *ui = (lv_ui *)arg;
@@ -81,6 +122,7 @@ void example_button_task(void *arg)
   char sdcard_send_buf[50] = {""};
   char sdcard_read_buf[50] = {""};
   uint8_t even_set_bit = 0;
+  uint8_t image_displayed = 0;  // Flag to track if image is displayed
   SET_BIT(even_set_bit,0);
   SET_BIT(even_set_bit,1);
   SET_BIT(even_set_bit,5);
@@ -89,26 +131,46 @@ void example_button_task(void *arg)
     EventBits_t even = xEventGroupWaitBits(key_groups,even_set_bit,pdTRUE,pdFALSE,pdMS_TO_TICKS(2500));
     if(READ_BIT(even,0))    //单击
     {
-      switch (ui_over)
+      // If we're in the main interface (page 2) and image not displayed, load image
+      if(ui_over == 2 && !image_displayed)
       {
-        case 2:
-          ui_over = 3;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 3:
-          ui_over = 4;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 4:
-          ui_over = 5;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        case 5:
-          ui_over = 2;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        default:
-          break;
+        load_and_display_sdcard_image(ui);
+        image_displayed = 1;
+      }
+      else if(image_displayed)
+      {
+        // If image is displayed, hide it and show carousel again
+        if(ui->screen_img_sdcard != NULL)
+        {
+          lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_clear_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
+        image_displayed = 0;
+      }
+      else
+      {
+        // Normal carousel navigation
+        switch (ui_over)
+        {
+          case 2:
+            ui_over = 3;
+            lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
+            break;
+          case 3:
+            ui_over = 4;
+            lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
+            break;
+          case 4:
+            ui_over = 5;
+            lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
+            break;
+          case 5:
+            ui_over = 2;
+            lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
+            break;
+          default:
+            break;
+        }
       }
     }
     else if(READ_BIT(even,1))  //双击

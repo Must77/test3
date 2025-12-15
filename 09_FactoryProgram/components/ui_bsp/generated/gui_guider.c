@@ -76,6 +76,7 @@ void init_scr_del_flag(lv_ui *ui)
 {
 
     ui->screen_del = true;
+    ui->screen_img_sdcard = NULL;  // Initialize SD card image pointer to NULL
 }
 
 void setup_ui(lv_ui *ui)
