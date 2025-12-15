@@ -40,6 +40,7 @@ typedef struct
 	lv_obj_t *screen_label_8;
 	lv_obj_t *screen_img_4;
 	lv_obj_t *screen_img_5;
+	lv_obj_t *screen_img_sdcard;  // Dynamically loaded image from SD card
 }lv_ui;
 
 typedef void (*ui_setup_scr_t)(lv_ui * ui);

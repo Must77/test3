@@ -15,7 +15,26 @@
 #include "i2c_equipment.h"
 #include "ble_scan_bsp.h"
 #include "esp_wifi_bsp.h"
+#include "sdmmc_cmd.h"
+#include "user_config.h"
+
+extern sdmmc_card_t *card_host;  // Extern declaration from sdcard_bsp.c
+
 lv_ui user_ui;
+
+// SD card image file path constant
+#define SDCARD_IMAGE_PATH "S:/sdcard/1.jpg"
+
+// Screen dimensions (from user_config.h)
+#ifndef SCREEN_WIDTH
+#define SCREEN_WIDTH EXAMPLE_LCD_H_RES
+#endif
+#ifndef SCREEN_HEIGHT
+#define SCREEN_HEIGHT EXAMPLE_LCD_V_RES
+#endif
+
+// Function to load and display image from SD card
+void load_and_display_sdcard_image(lv_ui *ui);
 
 void user_color_task(void *arg);
 void example_user_task(void *arg);
@@ -72,6 +91,51 @@ void example_scan_wifi_ble_task(void *arg)
   ble_stack_deinit();//释放BLE
   vTaskDelete(NULL);
 }
+
+// Function to load and display image from SD card
+void load_and_display_sdcard_image(lv_ui *ui)
+{
+  static const char *TAG = "ImageLoader";
+  
+  // Check if SD card is available
+  if(card_host == NULL)
+  {
+    ESP_LOGE(TAG, "SD card not initialized");
+    return;
+  }
+  
+  // Check if image object already exists, if not create it
+  if(ui->screen_img_sdcard == NULL)
+  {
+    ui->screen_img_sdcard = lv_img_create(ui->screen);
+    if(ui->screen_img_sdcard == NULL)
+    {
+      ESP_LOGE(TAG, "Failed to create image object (out of memory)");
+      return;
+    }
+    lv_obj_set_pos(ui->screen_img_sdcard, 0, 0);
+    lv_obj_set_size(ui->screen_img_sdcard, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_img_opa(ui->screen_img_sdcard, 255, LV_PART_MAIN|LV_STATE_DEFAULT);
+  }
+  
+  // Try to load the image from SD card
+  // LVGL uses filesystem with letter prefix, 'S' = 83 for STDIO
+  // Note: In LVGL 8.x, lv_img_set_src returns void, so we can't check return value
+  // The image will show error symbol if file doesn't exist or is invalid
+  ESP_LOGI(TAG, "Attempting to load image from SD card: %s", SDCARD_IMAGE_PATH);
+  lv_img_set_src(ui->screen_img_sdcard, SDCARD_IMAGE_PATH);
+  
+  // Show the image and hide carousel
+  lv_obj_clear_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
+  
+  ESP_LOGI(TAG, "Image display command sent. If image doesn't show, check:");
+  ESP_LOGI(TAG, "  1. SD card is properly inserted and formatted");
+  ESP_LOGI(TAG, "  2. File /sdcard/1.jpg exists");
+  ESP_LOGI(TAG, "  3. Image format is valid JPEG");
+}
+
 void example_button_task(void *arg)
 {
   lv_ui *ui = (lv_ui *)arg;
@@ -81,6 +145,7 @@ void example_button_task(void *arg)
   char sdcard_send_buf[50] = {""};
   char sdcard_read_buf[50] = {""};
   uint8_t even_set_bit = 0;
+  uint8_t image_displayed = 0;  // Flag to track if image is displayed
   SET_BIT(even_set_bit,0);
   SET_BIT(even_set_bit,1);
   SET_BIT(even_set_bit,5);
@@ -89,26 +154,49 @@ void example_button_task(void *arg)
     EventBits_t even = xEventGroupWaitBits(key_groups,even_set_bit,pdTRUE,pdFALSE,pdMS_TO_TICKS(2500));
     if(READ_BIT(even,0))    //单击
     {
-      switch (ui_over)
+      // If image is currently displayed, hide it and return to carousel
+      if(image_displayed)
       {
-        case 2:
-          ui_over = 3;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 3:
-          ui_over = 4;
-          lv_obj_scroll_by(ui->screen_carousel_1,-320,0,LV_ANIM_ON);
-          break;
-        case 4:
-          ui_over = 5;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        case 5:
-          ui_over = 2;
-          lv_obj_scroll_by(ui->screen_carousel_1,320,0,LV_ANIM_ON);
-          break;
-        default:
-          break;
+        // Hide image and show carousel again
+        if(ui->screen_img_sdcard != NULL)
+        {
+          lv_obj_add_flag(ui->screen_img_sdcard, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_clear_flag(ui->screen_carousel_1, LV_OBJ_FLAG_HIDDEN);
+        image_displayed = 0;
+        // Reset to main interface page when returning from image
+        ui_over = 2;
+      }
+      // If we're in the main interface (page 2) and image not displayed, load image
+      else if(ui_over == 2)
+      {
+        load_and_display_sdcard_image(ui);
+        image_displayed = 1;
+      }
+      else
+      {
+        // Normal carousel navigation when not displaying image
+        switch (ui_over)
+        {
+          case 2:
+            ui_over = 3;
+            lv_obj_scroll_by(ui->screen_carousel_1, -SCREEN_WIDTH, 0, LV_ANIM_ON);
+            break;
+          case 3:
+            ui_over = 4;
+            lv_obj_scroll_by(ui->screen_carousel_1, -SCREEN_WIDTH, 0, LV_ANIM_ON);
+            break;
+          case 4:
+            ui_over = 5;
+            lv_obj_scroll_by(ui->screen_carousel_1, SCREEN_WIDTH, 0, LV_ANIM_ON);
+            break;
+          case 5:
+            ui_over = 2;
+            lv_obj_scroll_by(ui->screen_carousel_1, SCREEN_WIDTH, 0, LV_ANIM_ON);
+            break;
+          default:
+            break;
+        }
       }
     }
     else if(READ_BIT(even,1))  //双击
